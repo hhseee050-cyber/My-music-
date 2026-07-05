@@ -16,7 +16,6 @@
 local guns = {}
 guns.projectiles = {}
 
-
 if SERVER then
     ---[SERVER] Create new projectile
     function guns.createProjectile(position, angle, mdl, ignore, damage, radius, startVelocity, timeout)
@@ -55,6 +54,7 @@ if SERVER then
                 if !trace_result.HitSky then
                     game.blastDamage(trace_result.HitPos, v.radius, v.damage)
                     
+                    -- FIXED: Wrapped in a nil-check block to prevent server-side crashes
                     local eff = beff.create("projectile_explosion")
                     if eff then
                         eff:setOrigin(pos)

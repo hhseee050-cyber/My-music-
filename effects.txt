@@ -1,0 +1,166 @@
+local beff = {}
+beff.inited = {}
+beff.initedClient = {}
+beff.registered = {}
+
+local BEffect = {}
+BEffect.__index = BEffect
+
+function BEffect:new()
+    return setmetatable(
+        {
+            Identifier = self.Identifier,
+            origin = Vector(), angles = Angle(), attachment = 0,
+            flags = 0, hitbox = 0, magnitude = 0, material = 0,
+            normal = Vector(0, 0, 1), radius = 0, scale = 1, start = 0,
+            surfaceProp = 0
+        },
+        self
+    )
+end
+
+function BEffect:init() end
+
+function BEffect:think() return true end
+
+function BEffect:setOrigin(origin) self.origin = origin end
+function BEffect:getOrigin() return self.origin end
+
+function BEffect:setAngles(angles) self.angles = angles end
+function BEffect:getAngles() return self.angles end
+
+function BEffect:setAttachment(attachment) self.attachment = attachment end
+function BEffect:getAttachment() return self.attachment end
+
+function BEffect:setEntity(entity) self.entity = entity end
+function BEffect:getEntity() return self.entity end
+
+function BEffect:setFlags(flags) self.flags = flags end
+function BEffect:getFlags() return self.flags end
+
+function BEffect:setHitbox(hitbox) self.hitbox = hitbox end
+function BEffect:getHitbox() return self.hitbox end
+
+function BEffect:setMagnitude(magnitude) self.magnitude = magnitude end
+function BEffect:getMagnitude() return self.magnitude end
+
+function BEffect:setMaterial(material) self.material = material end
+function BEffect:getMaterial() return self.material end
+
+function BEffect:setNormal(normal) self.normal = normal end
+function BEffect:getNormal() return self.normal end
+
+function BEffect:setRadius(radius) self.radius = radius end
+function BEffect:getRadius() return self.radius end
+
+function BEffect:setScale(scale) self.scale = scale end
+function BEffect:getScale() return self.scale end
+
+function BEffect:setStart(start) self.start = start end
+function BEffect:getStart() return self.start end
+
+function BEffect:setSurfaceProp(surfaceProp) self.surfaceProp = surfaceProp end
+function BEffect:getSurfaceProp() return self.surfaceProp end
+
+if SERVER then
+    function BEffect:play()
+        local index = #beff.inited+1
+        beff.inited[index] = self
+        self.index = index
+        local entValid = isValid(self.entity)
+        net.start("BModEffect")
+            net.writeBool(entValid)
+            if entValid then
+                net.writeEntity(self.entity)
+            end
+            net.writeTable(self)
+        net.send(find.allPlayers())
+    end
+
+    function BEffect:destroy()
+        net.start("BModEffectDestroy")
+            net.writeUInt(self.index, 32)
+        net.send(find.allPlayers())
+        beff.inited[self.index] = nil
+        setmetatable(self, nil)
+    end
+else
+    function BEffect:play()
+        local index
+        if self.fromServer then
+            index = self.index
+            beff.inited[index] = self
+        else
+            index = #beff.inited+1
+            beff.initedClient[index] = self
+        end
+        self.index = index
+        self:init()
+    end
+
+    function BEffect:onDestroy() end
+
+    function BEffect:destroy()
+        if self.fromServer then
+            beff.inited[self.index] = nil
+        else
+            beff.initedClient[self.index] = nil
+        end
+        self:onDestroy()
+        setmetatable(self, nil)
+    end
+
+    net.receive("BModEffect", function()
+        local function loadEffect()
+            local tbl = net.readTable()
+            local class = beff.registered[tbl.Identifier]
+            if not class then return end
+            local inherited = setmetatable(tbl, class)
+            inherited.fromServer = true
+            inherited:play()
+        end
+        local isEntity = net.readBool()
+        if isEntity then
+            net.readEntity(function()
+                loadEffect()
+            end)
+        else
+            loadEffect()
+        end
+    end)
+
+    net.receive("BModEffectDestroy", function()
+        local id = net.readUInt(32)
+        local eff = beff.inited[id]
+        if eff then
+            eff:destroy()
+        end
+    end)
+
+    hook.add("Think", "BModEffectsThink", function()
+        for _, v in pairs(beff.inited) do
+            if v and v.think and v:think() == false then
+                v:destroy()
+            end
+        end
+        for _, v in pairs(beff.initedClient) do
+            if v and v.think and v:think() == false then
+                v:destroy()
+            end
+        end
+    end)
+end
+
+function beff.register(class)
+    local inheritedClass = setmetatable(class, BEffect)
+    inheritedClass.__index = inheritedClass
+    beff.registered[class.Identifier] = inheritedClass
+end
+
+function beff.create(classname)
+    local class = beff.registered[classname]
+    if not class then return nil end
+    return class:new()
+end
+
+return beff
